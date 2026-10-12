@@ -1,0 +1,64 @@
+# M5f: mainline GCC `-m31` on VM/370plus (first proof, 7 October 2026)
+
+    s390x-linux-gnu-gcc -m31 -mesa -march=z900 -O2 -ffreestanding -fno-pic \
+        -fno-asynchronous-unwind-tables -fno-builtin -c hello31.c
+    s390x-linux-gnu-as -m31 -mesa entry31.s -o entry31.o
+    s390x-linux-gnu-ld -m elf_s390 -static --emit-relocs -T image.ld \
+        -o hello31.elf entry31.o hello31.o
+    elf_to_cms hello31.elf hello31x.text      # TEXT deck with RLDs
+
+Compiler: Ubuntu `gcc-s390x-linux-gnu` 13.2 (`apt`), binutils 2.42.
+Exporter: Adrian Sutherland's `tools/elf_to_cms.c` (mainframe-lab), with
+`elf_to_cms-pcrel.patch`: PC-relative fields (LARL/BRASL; R_390_PC16DBL,
+PC32DBL, PLT32DBL, PC32) are resolved by the static link and move with the
+image, so only R_390_32 needs an RLD.
+
+`entry31.s`: CMS calls in AMODE 24; the stub saves CMS's R13, sets up a
+64 KB BSS stack, BSMs to AMODE 31, calls `cms_main(plist)`, BSMs back.
+`cms202()` is the service bridge: plist below 16 MB (the image is), BSM to
+AMODE 24, `SVC 202` with the error-return word, BSM back to 31.
+
+**Needs Hercules 4.x**: GCC 13's lowest `-march` is z900, and it emits
+LARL, BRASL, ALCR, MLR -- the N3 instructions Hercules 4 allows in ESA/390
+mode and 3.13 does not (`feat390.h`).
+
+Result (w255, Hercules 4.9.1, CMSUSER 128M, EC-mode CMS from 290):
+
+    load hello31x (start
+    Execution begins...
+    HELLO31X: GCC -m31 CODE AT 000203E8, AMODE 31
+    HELLO31X: 40 MB AT 01000000 WRITTEN/READ, PAGES=10240 BAD=0 SUM=00000059FEC00000
+
+(sum of the page addresses: 10240*X'01000000' + 4096*52423680 = X'59FEC00000')
+
+## C runtime and cREXX (7 October 2026)
+
+`crt.sh OUT.text a.c ...` compiles with GCC 13 `-m31 -msoft-float
+-mlong-double-64`, links `entry31.s` + `cmsrt.c` + newlib 4.4 (`libc.a`,
+`libm.a`) + `softfp/libsoftfp.a` + the 31-bit libgcc, and exports a TEXT deck.
+`crexx/build.sh` builds RXC, RXAS, RXBVM, RXDAS from the 2022 tree.
+
+On VM/370plus (Hercules 4.9.1), `tests/runs/crexx31-install.json` reads the
+decks, `LOAD`/`GENMOD`s RXC31 etc., runs RXC31 -> RXAS31 -> RXBVM31 on
+BASIC REXX; `crexx31-tests.json` runs the 2022 tests that pass on a host
+build too (test, main, sextest, testbge/bgt/ble/blt, testneeq, func1, func2,
+length): every output identical to the host's (w259).
+
+## File names in cmsrt (12 October 2026)
+
+How a C program's file name becomes a CMS file id:
+
+| name | CMS file |
+|---|---|
+| `fn.ft`, `fn.ft.fm`, `fn ft fm` | that file. Reading searches all accessed disks unless a mode is given; writing goes to A. Parts are cut to 8 characters. |
+| `x/fn.ft` | `fn ft x` (cREXX `openfile()` style). `./fn.ft` has no mode. |
+| `/fn.ft` | `fn ft`. SQLite makes names absolute against getcwd() ".". |
+| `/tmp/.../fn.ft`, `/var/tmp/...` | `fn ft` (the last component): scratch files are CMS files |
+| `/usr/...` and other paths with two or more components | read only, from SYSROOT TAR (or CXXROOT TAR for `usr/include/c++` and `usr/lib/cxx`) |
+| `NAME` (no dot) | `FILE NAME`, as CMS FILEDEF defaults a ddname |
+| `name(b` | the same file, binary |
+
+Binary (no ASCII/EBCDIC conversion; written as fixed 80-byte or exact
+variable records) is chosen by filetype: RXBIN MODULE O A ELF OBJ XIMAGE LIB
+BIN OUT GCH TAR TMP DB SQLITE DB3 DBF DBT XDX and `DB-*`. Everything else is
+text in IBM-1047.
