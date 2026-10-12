@@ -106,9 +106,15 @@ WHEEZY=$PWD/wsys linux/wcc -O2 -o prog prog.c
 
 ## Binaries and sources
 
-The release `cms-gcc13-1` carries the CMS files built by `mktoolchain.sh`.
-It also carries the exact sources of the GNU parts they contain: GCC 13.3.0,
-binutils 2.42, newlib 4.4.0, GMP 6.3.0, MPFR 4.2.1 and MPC 1.3.1.
-Those parts are under their own licences: GPL v3 with the GCC Runtime
-Library Exception for GCC, libgcc and libstdc++; GPL v3 for binutils; LGPL
-for GMP, MPFR and MPC; and newlib's BSD-style licences.
+`bin/cms-gcc13-1.tar.gz` contains the CMS files built by `mktoolchain.sh`.
+`sources/` holds the exact sources of the GNU and library parts in them:
+GCC 13.3.0 (in two parts), binutils 2.42, newlib 4.4.0, GMP 6.3.0, MPFR
+4.2.1 and MPC 1.3.1, each with its checksum. Those parts are under their own
+licences:
+- GCC, libgcc and libstdc++: GPL v3 with the GCC Runtime Library Exception;
+- binutils: GPL v3;
+- GMP, MPFR and MPC: LGPL;
+- newlib: BSD-style licences.
+
+The ELF-to-CMS exporter is Adrian Sutherland's (mainframe-lab
+`tools/elf_to_cms.c`); this repository carries only the two patches to it.
